@@ -253,7 +253,7 @@ def main() -> None:
     (ROOT / "results").mkdir(exist_ok=True)
     (ROOT / "plots").mkdir(exist_ok=True)
     with (ROOT / "results" / f"{stem}.csv").open("w", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=rows[0].keys())
+        writer = csv.DictWriter(f, fieldnames=rows[0].keys(), lineterminator="\n")
         writer.writeheader()
         writer.writerows(rows)
 
