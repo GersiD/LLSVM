@@ -11,7 +11,7 @@ Embed text once with a small language model, then classify it with an SVM: about
 
 <sub>Apple M2 Pro laptop, one text at a time, mean over 1,000 test texts. Classifier times are on top of the embedding time.</sub>
 
-![Classifier comparison on the SMS Spam Collection](plots/sms_spam_minilm.png)
+![Classifier comparison on the SMS Spam Collection](results/plots/sms_spam_minilm.png)
 
 ## Why this repo exists
 
@@ -30,7 +30,7 @@ Embed text once with a small language model, then classify it with an SVM: about
     uv run experiment.py                                   # SMS Spam, MiniLM
     uv run experiment.py --dataset emotion --embedder minilm
 
-Each run writes `results/<dataset>_<embedder>.csv` and `plots/<dataset>_<embedder>.png`.
+Each run writes `results/<dataset>_<embedder>.csv` and `results/<dataset>_<embedder>.json`. Then `uv run results/plot.py` makes `results/plots/<dataset>_<embedder>.png`.
 
 ### macOS
 

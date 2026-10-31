@@ -3,8 +3,9 @@
 Trains every classifier in `make_classifiers` on the dataset's train split (all
 sharing one embedding pass) and scores it on the test split. Writes scores,
 train time, batch predict time and single-text latency (mean, p90, p95, p99) for
-each classifier and for the embedder to results/<dataset>_<embedder>.csv, and a
-plot to plots/<dataset>_<embedder>.png.
+each classifier and for the embedder to results/<dataset>_<embedder>.csv, and
+the run's metadata (dataset, embedder, split sizes) to results/<dataset>_<embedder>.json.
+Plotting is separate: see results/plot.py.
 
     uv run experiment.py                                   # sms_spam, minilm
     uv run experiment.py --dataset emotion --embedder minilm
@@ -16,6 +17,7 @@ make_classifiers.
 """
 
 import argparse
+import json
 import sys
 import time
 from collections import Counter
@@ -23,10 +25,6 @@ from collections.abc import Callable, Hashable
 from dataclasses import dataclass
 from pathlib import Path
 
-import matplotlib
-
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from sklearn.metrics import accuracy_score, f1_score
@@ -191,61 +189,6 @@ def run(train: Split, test: Split, embedder: TextEmbedder, latency_samples: int)
     return pd.DataFrame(rows).set_index("classifier")[COLUMNS]
 
 
-# --- Plot ---------------------------------------------------------------------
-
-INK, INK_2, MUTED, GRID, SURFACE = "#0b0b0b", "#52514e", "#898781", "#e1e0d9", "#fcfcfb"
-# Categorical slots 1-4, in fixed order (validated colorblind-safe for adjacent pairs).
-FAMILY_COLORS = {"k-means": "#2a78d6", "logistic regression": "#1baf7a", "SVM": "#eb6834", "gradient boosting": "#eda100"}
-
-
-def plot(results: pd.DataFrame, title: str, subtitle: str, path: Path) -> None:
-    """Dot plot of macro-F1 and accuracy per classifier, colored by family."""
-    results = results[results["family"].isin(FAMILY_COLORS)]
-    names = list(results.index)
-    families = list(results["family"])
-    # One row per classifier, top to bottom, with an extra gap between families.
-    y, pos = [], 0.0
-    for i, fam in enumerate(families):
-        if i and fam != families[i - 1]:
-            pos += 0.6
-        y.append(-pos)
-        pos += 1
-    y = np.array(y)
-    colors = [FAMILY_COLORS[f] for f in families]
-
-    plt.rcParams["font.family"] = ["Helvetica Neue", "Helvetica", "Arial", "DejaVu Sans"]
-    fig, axes = plt.subplots(1, 2, figsize=(11, 0.5 * len(names) + 2.4), sharey=True, facecolor=SURFACE)
-    for ax, metric, label in zip(axes, ["macro_f1", "accuracy"], ["Macro F1", "Accuracy"]):
-        values = results[metric].to_numpy()
-        ax.set_facecolor(SURFACE)
-        ax.scatter(values, y, s=80, c=colors, edgecolor=SURFACE, linewidth=2, zorder=3)
-        for yi, v in zip(y, values):
-            ax.annotate(f"{v:.3f}", (v, yi), xytext=(9, 0), textcoords="offset points",
-                        va="center", fontsize=9, color=INK_2)
-
-        lo, hi = values.min(), values.max()
-        pad = (hi - lo) * 0.08
-        ax.set_xlim(lo - pad, min(1.0, hi + 3 * pad) if hi + 3 * pad > 1.0 else hi + 3 * pad)
-        ax.set_title(label, loc="left", fontsize=11, color=INK, fontweight="bold", pad=10)
-        ax.grid(axis="x", color=GRID, linewidth=0.8)
-        ax.set_axisbelow(True)
-        ax.tick_params(axis="x", colors=MUTED, labelsize=9, length=0)
-        ax.tick_params(axis="y", length=0)
-        for side in ("top", "right", "left", "bottom"):
-            ax.spines[side].set_visible(False)
-
-    axes[0].set_yticks(y, names, fontsize=10, color=INK)
-    handles = [plt.Line2D([], [], marker="o", linestyle="", markersize=8, color=c, label=f)
-               for f, c in FAMILY_COLORS.items() if f in families]
-    fig.legend(handles=handles, loc="upper right", ncol=len(handles), frameon=False, fontsize=10,
-               labelcolor=INK_2, bbox_to_anchor=(0.99, 0.985))
-    fig.text(0.01, 0.975, title, ha="left", va="top", fontsize=14, color=INK, fontweight="bold")
-    fig.text(0.01, 0.925, subtitle, ha="left", va="top", fontsize=10, color=INK_2)
-    fig.tight_layout(rect=(0, 0, 1, 0.88), w_pad=4)
-    fig.savefig(path, dpi=200, facecolor=SURFACE)
-    plt.close(fig)
-
-
 # --- Main ---------------------------------------------------------------------
 
 
@@ -263,22 +206,20 @@ def main() -> None:
     print(results.drop(columns="config_hash").round(4).to_string())
 
     stem = f"{args.dataset}_{args.embedder}"
-    (ROOT / "results").mkdir(exist_ok=True)
-    (ROOT / "plots").mkdir(exist_ok=True)
-    results.to_csv(ROOT / "results" / f"{stem}.csv", lineterminator="\n")
-
-    best = results[results["family"].isin(FAMILY_COLORS)]["macro_f1"].idxmax()
-    model_id = embedder.config().get("model_id", args.embedder).split("/")[-1]
-    baseline = results.loc["majority class"]
-    plot(
-        results,
-        title=f"{best[0].upper()}{best[1:]} leads on the {DATASETS[args.dataset]}",
-        subtitle=(f"{model_id} embeddings · {len(train.texts):,} train / {len(test.texts):,} test · "
-                  f"majority-class baseline: macro F1 {baseline['macro_f1']:.3f}, "
-                  f"accuracy {baseline['accuracy']:.3f}"),
-        path=ROOT / "plots" / f"{stem}.png",
-    )
-    print(f"wrote results/{stem}.csv and plots/{stem}.png")
+    out = ROOT / "results"
+    out.mkdir(exist_ok=True)
+    results.to_csv(out / f"{stem}.csv", lineterminator="\n")
+    metadata = {
+        "dataset": args.dataset,
+        "dataset_title": DATASETS[args.dataset],
+        "embedder": args.embedder,
+        "embedder_config": embedder.config(),
+        "n_train": len(train.texts),
+        "n_test": len(test.texts),
+        "latency_samples": min(LATENCY_SAMPLES, len(test.texts)),
+    }
+    (out / f"{stem}.json").write_text(json.dumps(metadata, indent=2) + "\n")
+    print(f"wrote results/{stem}.csv and results/{stem}.json")
 
 
 if __name__ == "__main__":
