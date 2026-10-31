@@ -1,0 +1,20 @@
+{
+  "dataset": "sms_spam",
+  "backend": "claude-code",
+  "model": "claude-sonnet-5-5",
+  "effort": "low",
+  "n_test": 1035,
+  "test_subsample": false,
+  "stopped_at_cost_cap": false,
+  "max_cost_usd": 10.0,
+  "cost_is_notional": true,
+  "latency_ms_is": "model time reported by Claude Code",
+  "concurrency": 4,
+  "system_prompt": "You are a text classifier. Each user message is an SMS message. Label it spam (unsolicited advertising, scams, prize or premium-rate offers) or ham (any legitimate personal or business message). Answer with exactly one label from: ham, spam.",
+  "served_by": {
+    "claude-sonnet-5-5": 1035
+  },
+  "stop_reasons": {
+    "success": 1035
+  }
+}

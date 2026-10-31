@@ -1,0 +1,20 @@
+{
+  "dataset": "emotion",
+  "backend": "claude-code",
+  "model": "claude-sonnet-5-5",
+  "effort": "low",
+  "n_test": 4000,
+  "test_subsample": false,
+  "stopped_at_cost_cap": false,
+  "max_cost_usd": 20.0,
+  "cost_is_notional": true,
+  "latency_ms_is": "model time reported by Claude Code",
+  "concurrency": 8,
+  "system_prompt": "You are a text classifier. Each user message is an English tweet. Label it with the main emotion its author expresses. Answer with exactly one label from: anger, fear, joy, love, sadness, surprise.",
+  "served_by": {
+    "claude-sonnet-5-5": 1437
+  },
+  "stop_reasons": {
+    "success": 4000
+  }
+}

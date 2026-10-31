@@ -1,0 +1,2 @@
+classifier,family,macro_f1,accuracy,train_seconds,predict_seconds,latency_ms_mean,latency_ms_p90,latency_ms_p95,latency_ms_p99,wall_ms_mean,wall_ms_p90,wall_ms_p95,wall_ms_p99,n_failed,input_tokens,output_tokens,cost_usd
+claude-sonnet-5-5,LLM,0.30797231567099764,0.2235,0.0,965.0429206249974,624.6215,1877.1,2240.0,3415.2299999999946,1928.0863671802617,3013.77022020024,3359.7577964990705,4529.577365588983,2563,1690711,75965,4.1939811
