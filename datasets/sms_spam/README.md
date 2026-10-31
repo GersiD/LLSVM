@@ -12,17 +12,19 @@
 uv run datasets/sms_spam/download.py
 ```
 
-This writes `data/sms_spam.parquet` next to this README (git-ignored).
+This writes `data/train.parquet` and `data/test.parquet` next to this README
+(git-ignored).
 
 ## Format
 
-| column  | type | meaning              |
-|---------|------|----------------------|
-| `sms`   | str  | message text         |
-| `label` | int  | 0 = ham, 1 = spam    |
+| column  | type | meaning          |
+|---------|------|------------------|
+| `text`  | str  | message text     |
+| `label` | str  | `ham` or `spam`  |
 
-There is only a `train` split; make your own stratified train/test split.
+The source publishes no split, so `download.py` makes one:
 
-The raw file has 403 exact duplicate messages (none with conflicting labels).
-`experiment.py` drops them before splitting, leaving 5,171 messages (653 spam),
-so copies of a message can't land in both train and test.
+- It drops the 403 exact duplicate messages (none have conflicting labels), so
+  copies of a message can't land in both train and test. 5,171 messages remain
+  (653 spam).
+- It makes a stratified 80/20 split with seed 0: 4,136 train, 1,035 test.
