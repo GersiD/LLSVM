@@ -1,8 +1,10 @@
 """Compare classifiers on a text classification dataset.
 
 Trains every classifier in `make_classifiers` on the dataset's train split (all
-sharing one embedding pass) and scores it on the test split. Writes scores to
-results/<dataset>_<embedder>.csv and a plot to plots/<dataset>_<embedder>.png.
+sharing one embedding pass) and scores it on the test split. Writes scores,
+train time, batch predict time and single-text latency (mean, p90, p95, p99) for
+each classifier and for the embedder to results/<dataset>_<embedder>.csv, and a
+plot to plots/<dataset>_<embedder>.png.
 
     uv run experiment.py                                   # sms_spam, minilm
     uv run experiment.py --dataset emotion --embedder minilm
@@ -122,34 +124,71 @@ class CachedEmbedder(TextEmbedder):
 
 # --- Experiment ---------------------------------------------------------------
 
+LATENCY_SAMPLES = 1000  # test texts timed one at a time for latency percentiles
+COLUMNS = [
+    "family", "macro_f1", "accuracy", "train_seconds", "predict_seconds",
+    "latency_ms_mean", "latency_ms_p90", "latency_ms_p95", "latency_ms_p99", "config_hash",
+]
 
-def score(name: str, family: str, y_true: list, y_pred: list, fit_seconds: float, config_hash: str) -> dict:
+
+def timed(fn: Callable, *args):
+    """(fn(*args), seconds taken)."""
+    start = time.perf_counter()
+    out = fn(*args)
+    return out, time.perf_counter() - start
+
+
+def latency_ms(predict_one: Callable[[str], object], texts: list[str]) -> dict:
+    """Single-text latency stats in milliseconds, after one warm-up call."""
+    predict_one(texts[0])
+    ms = np.array([timed(predict_one, t)[1] * 1000 for t in texts])
     return {
-        "classifier": name,
-        "family": family,
-        "macro_f1": f1_score(y_true, y_pred, average="macro"),
-        "accuracy": accuracy_score(y_true, y_pred),
-        "fit_seconds": fit_seconds,
-        "config_hash": config_hash,
+        "latency_ms_mean": ms.mean(),
+        **{f"latency_ms_p{q}": np.percentile(ms, q) for q in (90, 95, 99)},
     }
 
 
-def run(train: Split, test: Split, embedder: TextEmbedder) -> pd.DataFrame:
-    """One row per classifier, plus a majority-class baseline, indexed by classifier name."""
+def run(train: Split, test: Split, embedder: TextEmbedder, latency_samples: int) -> pd.DataFrame:
+    """One row per classifier, plus a majority-class baseline and an embedding row, indexed by name.
+
+    train_seconds and the predict/latency columns cover the classifier only (embeddings are
+    cached); the embedding row holds the embedder's own batch and single-text costs.
+    """
+    rng = np.random.default_rng(0)
+    sample = [test.texts[i] for i in rng.choice(len(test.texts), min(latency_samples, len(test.texts)), replace=False)]
+
+    _, embed_seconds = timed(embedder.embed, test.texts)
+    rows = [{
+        "classifier": "embedding", "family": "embedder", "predict_seconds": embed_seconds,
+        **latency_ms(lambda t: embedder.embed([t]), sample), "config_hash": embedder.model_hash,
+    }]
     embedder = CachedEmbedder(embedder)
     embedder.embed(train.texts + test.texts)
 
     majority = Counter(train.labels).most_common(1)[0][0]
-    rows = [score("majority class", "baseline", test.labels, [majority] * len(test.labels), 0.0, "")]
-    classifiers = make_classifiers(embedder)
-    bar = tqdm(classifiers.items(), desc="training", unit="fit")
+    baseline = [majority] * len(test.labels)
+    rows.append({
+        "classifier": "majority class", "family": "baseline",
+        "macro_f1": f1_score(test.labels, baseline, average="macro"),
+        "accuracy": accuracy_score(test.labels, baseline),
+    })
+
+    bar = tqdm(make_classifiers(embedder).items(), desc="classifiers", unit="clf")
     for name, clf in bar:
-        bar.set_postfix_str(name)
-        start = time.perf_counter()
-        clf.fit(train.texts, train.labels)
-        fit_seconds = time.perf_counter() - start
-        rows.append(score(name, family(clf), test.labels, clf.predict(test.texts), fit_seconds, clf.config_hash))
-    return pd.DataFrame(rows).set_index("classifier")
+        bar.set_postfix_str(f"{name}: train")
+        _, train_seconds = timed(clf.fit, train.texts, train.labels)
+        bar.set_postfix_str(f"{name}: predict")
+        pred, predict_seconds = timed(clf.predict, test.texts)
+        bar.set_postfix_str(f"{name}: latency")
+        rows.append({
+            "classifier": name, "family": family(clf),
+            "macro_f1": f1_score(test.labels, pred, average="macro"),
+            "accuracy": accuracy_score(test.labels, pred),
+            "train_seconds": train_seconds, "predict_seconds": predict_seconds,
+            **latency_ms(lambda t: clf.predict([t]), sample),
+            "config_hash": clf.config_hash,
+        })
+    return pd.DataFrame(rows).set_index("classifier")[COLUMNS]
 
 
 # --- Plot ---------------------------------------------------------------------
@@ -161,7 +200,7 @@ FAMILY_COLORS = {"k-means": "#2a78d6", "logistic regression": "#1baf7a", "SVM": 
 
 def plot(results: pd.DataFrame, title: str, subtitle: str, path: Path) -> None:
     """Dot plot of macro-F1 and accuracy per classifier, colored by family."""
-    results = results[results["family"] != "baseline"]
+    results = results[results["family"].isin(FAMILY_COLORS)]
     names = list(results.index)
     families = list(results["family"])
     # One row per classifier, top to bottom, with an extra gap between families.
@@ -220,15 +259,15 @@ def main() -> None:
     print(f"{args.dataset}: {len(train.texts):,} train / {len(test.texts):,} test, "
           f"train classes {dict(Counter(train.labels))}")
     embedder = EMBEDDERS[args.embedder]()
-    results = run(train, test, embedder)
-    print(results.round(4).to_string())
+    results = run(train, test, embedder, LATENCY_SAMPLES)
+    print(results.drop(columns="config_hash").round(4).to_string())
 
     stem = f"{args.dataset}_{args.embedder}"
     (ROOT / "results").mkdir(exist_ok=True)
     (ROOT / "plots").mkdir(exist_ok=True)
     results.to_csv(ROOT / "results" / f"{stem}.csv", lineterminator="\n")
 
-    best = results[results["family"] != "baseline"]["macro_f1"].idxmax()
+    best = results[results["family"].isin(FAMILY_COLORS)]["macro_f1"].idxmax()
     model_id = embedder.config().get("model_id", args.embedder).split("/")[-1]
     baseline = results.loc["majority class"]
     plot(
