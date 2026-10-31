@@ -16,3 +16,4 @@ pass it per command or set it once for your shell:
 
 - [ ] Professionalism pass over the whole project: comments, docstrings, naming and consistency.
 - [ ] Write the story behind this repo, below the plot.
+- [ ] Make experiments more modular: `experiment.py` should only write a results file, and plotting should be a separate script that reads results files.
