@@ -4,6 +4,7 @@ from fakes import FakeEmbedder
 from llsvm.huggingface_text_embedder import HuggingFaceTextEmbedder
 from llsvm.kmeans import KMeansClassifier
 from llsvm.logistic_regression import LogisticRegressionClassifier
+from llsvm.qda import QDAClassifier
 from llsvm.svm import KernelSVM, LinearSVM
 from llsvm.xgboost_classifier import XGBoostClassifier
 from llsvm.text_embedder import TextEmbedder
@@ -27,6 +28,7 @@ CLASSIFIER_FACTORIES = [
     pytest.param(KernelSVM, id="rbf-svm"),
     pytest.param(lambda emb: KMeansClassifier(emb, k=2), id="kmeans-k2"),
     pytest.param(LogisticRegressionClassifier, id="logreg"),
+    pytest.param(QDAClassifier, id="qda"),
     pytest.param(XGBoostClassifier, id="xgboost"),
 ]
 

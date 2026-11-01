@@ -31,6 +31,8 @@ uv run pytest -v               # list each test as it runs
   means, small classes, k=2 fits XOR where k=1 can't).
 - `test_logistic_regression.py`, `test_xgboost_classifier.py`: hyperparameters
   reach `config_hash`; XGBoost fits XOR.
+- `test_qda.py`: shrinkage reaches `config_hash`; QDA separates two classes
+  that differ only in spread, where logistic regression can't.
 - `fakes.py`: `FakeEmbedder`, a deterministic model-free embedder. Texts
   starting with `c<k>` (e.g. `"c2 hello"`) land in linearly separable cluster k.
 - `conftest.py`: the `EMBEDDER_FACTORIES` and `CLASSIFIER_FACTORIES` registries.
