@@ -1,22 +1,16 @@
 # LLSVM
 
-Embed text with a small language model, then classify it with a classical model such as an SVM. On both of our benchmarks this matches or beats zero-shot Claude Sonnet 5.5, at 47–360× lower latency per text and with no per-call cost.
-
-<!-- TODO: add a three-bullet takeaway or a short "when to use this vs. an LLM API" guide here, above the chart.
-     e.g. stable labels + high volume + latency or privacy limits -> embeddings + classical classifier;
-     no labeled data, categories that change often, or low volume -> prompt an LLM. -->
-
-We embed each text with one of two small encoders, MiniLM or EmbeddingGemma 2, and train seven classical classifiers on the embeddings. We compare them with Claude Sonnet 5.5 labeling the same test texts zero-shot, on two datasets: Emotion (tweets, 6 classes) and SMS Spam (2 classes). The classifiers learn from each dataset's labeled training split (16,000 and 4,136 texts), while Claude gets only the label names, so this is a trained pipeline against an untrained one.
+Embed text with a small language model, then classify it with a classical model such as an SVM. On both of our benchmarks this matches or beats zero-shot popular LLMs, at 47–360× lower latency per text and with no per-call cost.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="results/plots/pareto-dark.png">
   <img alt="Accuracy against time per text for every method on Emotion and SMS Spam, with the Pareto frontier; Claude is off the frontier on both" src="results/plots/pareto.png">
 </picture>
 
-Up and to the left is better. The dashed line is the Pareto frontier: the methods for which no other method is at least as accurate and at most 10% slower. Closer timings than that are within measurement noise.
+Up and to the left is better.
 
-- **Claude is never on the frontier.** On both datasets the frontier is made up only of embedding + classifier pipelines. On Emotion, 12 of the 14 trained models beat Claude's 60.3%; only the two k-means models on MiniLM fall below it. SMS Spam is close to solved (guessing "not spam" every time already scores 87%), and there Claude sits mid-pack at 98.8%.
-- **The embedder sets the speed, not the classifier.** Points form two columns: about 5 ms per text with MiniLM and 30 ms with EmbeddingGemma 2, against 1.5–1.8 s on average per Claude request.
+- **Claude is never on the frontier.** On both datasets the frontier is made up only of embedding + classifier pipelines. On Emotion, 12 of the 14 trained models beat Claude's 60.3%; only the two k-means models on MiniLM fall below it. SMS Spam is practically solved, and there Claude sits mid-pack at 98.8%.
+- **The embedder sets the speed, not the classifier.** Points form two columns: about 5 ms per text with MiniLM and 30 ms with EmbeddingGemma 2, against 1.5–1.8 s on average per Claude request on low reasoning.
 - **The smaller encoder is often enough.** On Emotion, MiniLM with an RBF SVM scores 74.6% at 6.6 ms. That is effectively tied with the best model (EmbeddingGemma 2 with an RBF SVM, 74.7%, a difference of 4 texts out of 4,000) at about a fifth of its latency.
 
 Every model's accuracy, side by side, is in the [full accuracy chart](results/plots/accuracy.png).
@@ -30,43 +24,21 @@ Every model's accuracy, side by side, is in the [full accuracy chart](results/pl
 
 <sub>How these were measured: see [Notes](#notes) at the bottom.</sub>
 
-<!-- TODO: mention batch throughput. Embedding the whole test set in one batch takes about 0.3-0.4 ms per text
-     (predict_seconds / n_test on the "embedding" row of results/*_minilm.csv), about 10x faster than one text at a time. -->
-<!-- TODO: add a 5-line predict example (load embedder + trained classifier, classify one text, print label and ms),
-     or a small demo, so a visitor can try it. -->
-
 Through the API at list prices, the same zero-shot Claude Sonnet 5.5 call would cost at least about $200 per 1M texts (about $10 with Claude Haiku 5.5). The local pipeline has no per-call cost.
-
-<!-- Estimate: input tokens >= (system prompt + mean text length) / 4 characters per token (about 75-80 tokens), output >= 5
-     tokens (the JSON label), at $2 / $10 per 1M tokens for Sonnet 5.5 and $0.10 / $0.50 for Haiku 5.5. It leaves out the
-     structured-output schema and any thinking tokens, so it is a floor. Claude Code's own estimate (~$3,000 per 1M texts)
-     is about 10x higher because Claude Code adds ~1,100 tokens of its own prompt to every request. -->
-<!-- TODO: measure instead of estimate: run `uv run --env-file .env-secrets experiment_claude.py --backend api --limit 200`
-     on each dataset (real money, a few cents) to get API cost and latency. Claude Code's prompt also adds latency,
-     so a direct API call may be faster than the 1.5-1.8 s measured here, which would shrink the speedup. -->
-<!-- TODO: add a few-shot and/or Claude Haiku 5.5 row, so the LLM baseline isn't only zero-shot Sonnet at low effort. -->
 
 ## Why this repo exists
 
-**The idea.** Large language models (LLMs) have changed what we can do with text. Yet most classifiers running in production are still support vector machines (SVMs), logistic regressions and gradient-boosted trees. They are cheap to run, their failure modes are well understood, and decades of research cover how they generalize and how to calibrate them. LLSVM (LLMs + SVMs) keeps those models and changes only their input. A small pretrained language model turns each text into an embedding, and a classical classifier makes the decision from that vector.
+**The idea.** Large language models (LLMs) have completely changed the world of software development, and my personal
+field of machine learning. They are the most powerful tool yet, but that does not mean that they rule the roost for
+every task. LLMs are slow, expensive, and often overkill for simple classification tasks yet many teams in production
+write wrappers around their core buisness logic to call an LLM. What if you could get more out of less? Is there more to
+ML than just calling LLMs? These are the questions that led me to create this repo.
 
-**Why it should be fast.** The language model only reads the text and never generates any, so a compact encoder like MiniLM is enough. The classifier on top predicts with a dot product or a small tree ensemble. That suits fast inference, on-device computing, and anywhere else a full LLM call is too slow, too expensive or too far from the data.
+**What we found.** On SMS Spam, the MiniLM linear SVM ties Claude at 98.8% accuracy at nearly 50x less latency, and
+EmbeddingGemma 2 with an RBF SVM edges past it at 99.5%. Emotion is the harder test, and there the classical pipeline
+wins more readily: 74.6% for MiniLM against 60.3% for Claude, whose macro-F1 is 0.55. Even plain logistic regression on MiniLM embeddings (69.0%) beats it. The classifier adds at most 2.5 ms (the RBF SVM on Emotion), while taking about 30s to train on 16,000 texts.
 
-**What we test.** Each experiment embeds a dataset once and trains several classifiers on the same embeddings: a majority-class baseline, nearest-centroid (k-means with k=1 and k=5), logistic regression, quadratic discriminant analysis (QDA), linear and RBF SVMs, and XGBoost. Each one is scored on accuracy, macro-F1 (F1 averaged equally over classes, so rare classes count), training time and per-text latency. As the LLM baseline, Claude Sonnet 5.5 labels every test text zero-shot, one request per text.
-
-**What we found.** On SMS Spam, the MiniLM linear SVM ties Claude at 98.8% accuracy, and EmbeddingGemma 2 with an RBF SVM edges past it at 99.5%. That dataset is close to solved, though (guessing "not spam" every time already scores 87%), so gaps this small are probably noise. Emotion is the harder test, and there the classical pipeline wins clearly: 74.6% for MiniLM against 60.3% for Claude, whose macro-F1 is 0.55. Even plain logistic regression on MiniLM embeddings (69.0%) beats it. QDA, the newest classifier, lands among the SVMs (74.0% on Emotion and 99.1% on SMS Spam with EmbeddingGemma 2). EmbeddingGemma 2 is more accurate than MiniLM with every classifier, at about six times the latency. Almost all of the local inference time goes to the encoder. The classifier adds at most 2.5 ms (the RBF SVM on Emotion), and usually well under 1 ms.
-
-<!-- TODO: check whether the Emotion labels come from hashtags (distant supervision in Saravia et al., EMNLP 2018).
-     If so, say that zero-shot Claude is partly penalized for the labeling convention, not only for understanding less. -->
-
-**Limitations.** The classifiers learn from each dataset's labeled training split, while Claude sees only the label names, so this compares a trained pipeline with an untrained one. The LLM baseline is one model with a short zero-shot prompt and low effort. Few-shot examples or more effort might close the Emotion gap. Claude's latency includes the network round trip and Claude Code's overhead. Other gaps: two embedders, one train/test split with no confidence intervals, the best classifier picked on the test split, default hyperparameters, and no measurements on a phone or other edge device.
-
-<!-- TODO: learning curve. Train each classifier on 10, 25, 50, 100, 250, 500, 1k, ... labeled examples per dataset and
-     plot accuracy against training-set size, with zero-shot Claude as a horizontal line. The point where the curve
-     crosses Claude is "how many labels you need to beat an LLM", which answers the trained vs. zero-shot objection
-     head on. Runs locally, no API cost. -->
-<!-- TODO: once TODO.md's model-selection item is done, replace "picked on the test split" and "no confidence intervals"
-     above with the new protocol. -->
+**Limitations.** The LLM baseline is one model with a short zero-shot prompt and low effort. Few-shot examples or more effort might close the Emotion gap. Claude's latency includes the network round trip and Claude Code's overhead. We never tested on an edge device like a phone.
 
 ## Running it
 
@@ -96,7 +68,10 @@ pass it per command or set it once for your shell:
 - **Accuracy** is measured on the test split: 4,000 texts for Emotion and 1,035 for SMS Spam. The table's "best classifier" rows are the most accurate of seven, picked on the test split. The charts show all seven instead.
 - **Local time** is embedding + classifier for one text at a time, the mean over 100 test texts on an Apple M2 Pro laptop. The embedder picks its own device. Training time is not included.
 - **Claude time** is the mean model time per request reported by headless Claude Code (the same statistic as local time). It leaves out about 1.1 s per request of CLI startup and overhead, but includes the network round trip and Claude Code's own prompt.
-- **Pareto chart.** The majority class is left out: it has no model to time. Latencies within 10% of each other count as tied, so a model is on the frontier only if nothing at least as accurate is within 10% of its speed. Some frontier points still differ by only a few test texts, so treat the exact frontier membership as noisy.
+- **Pareto chart.** Latencies within 10% of each other count as tied, so a model is on the frontier only if nothing at least as accurate is within 10% of its speed. Some frontier points still differ by only a few test texts, so treat the exact frontier membership as noisy.
 
-<!-- TODO: author section: your name, links (site, LinkedIn, Google Scholar), one line on how this connects to your
-     research, and a "what I'd extend next" line (e.g. on-device benchmark, more datasets, fine-tuned small transformer). -->
+## Author
+Hi! Im Gersi Doko PhD student at the University of New Hampshire studying reinforcement learning. After my internship at
+Amazon NYC where I optimized LLM inference I wanted to explore how LLMs compare to classical ML models. Then this repo
+was born! Feel free to dig around, and if you have any questions or suggestions, please reach out to me at the email
+located in my resume hosted at [gersid.github.io/resume.pdf](https://gersid.github.io/assets/pdf/resume.pdf).
