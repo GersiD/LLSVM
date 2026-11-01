@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from text_embedder import TextEmbedder
+from llsvm.text_embedder import TextEmbedder
 
 
 class Constant(TextEmbedder):

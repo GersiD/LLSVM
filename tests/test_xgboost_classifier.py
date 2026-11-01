@@ -3,7 +3,7 @@
 import pytest
 
 from fakes import FakeEmbedder
-from xgboost_classifier import XGBoostClassifier
+from llsvm.xgboost_classifier import XGBoostClassifier
 
 
 @pytest.mark.parametrize("kwargs", [{"n_estimators": 10}, {"max_depth": 2}, {"seed": 1}], ids=lambda kw: next(iter(kw)))

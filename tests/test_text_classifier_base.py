@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 from fakes import FakeEmbedder
-from text_classifier import TextClassifier
+from llsvm.text_classifier import TextClassifier
 
 
 class Recorder(TextClassifier):

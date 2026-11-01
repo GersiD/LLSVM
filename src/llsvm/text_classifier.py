@@ -6,8 +6,8 @@ from typing import Any, Self
 
 import numpy as np
 
-from hashing import stable_hash
-from text_embedder import TextEmbedder
+from llsvm.hashing import stable_hash
+from llsvm.text_embedder import TextEmbedder
 
 
 class TextClassifier(ABC):

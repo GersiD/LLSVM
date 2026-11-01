@@ -1,12 +1,12 @@
 """Headline figure: classical classifiers on small-LM embeddings vs. a zero-shot Claude baseline.
 
 Datasets are on the X axis. For each one the figure shows, top to bottom, accuracy of the
-best classifier per embedder next to Claude, per-text latency (log scale) with the speedup
-over Claude, and Claude's (notional) cost per 1M texts. Everything is discovered from the
+best classifier per embedder next to Claude, then per-text latency (log scale) with the
+speedup over Claude. Everything is discovered from the
 files present, so adding a dataset, embedder or Claude run needs no code change.
 
 Reads results/<dataset>_<embedder>.{csv,json} (experiment.py) and
-results/claude/<dataset>_<model>_claude-code_predictions.csv (experiment-claude.py).
+results/claude/<dataset>_<model>_claude-code_predictions.csv (experiment_claude.py).
 Claude numbers come only from the predictions file; a row with an empty prediction is
 unanswered and is excluded (the figure then marks the run as partial).
 
@@ -34,7 +34,6 @@ CLASSIFIER_FAMILIES = {"k-means", "logistic regression", "SVM", "gradient boosti
 EMBEDDER_ORDER = ["minilm", "gemma2"]  # fixed colour slots; unknown embedders follow, sorted
 EMBEDDER_NAMES = {"minilm": "MiniLM", "gemma2": "Gemma 2"}
 TIE = 0.01  # accuracy gap (absolute) below which the headline calls it a tie (about noise level here)
-CLAUDE_CODE_COST_FACTOR_NOTE = "roughly 2x a direct API call"
 
 # Light uses plot.py's palette. Dark steps come from the dataviz palette (same hues, dark surface).
 THEMES = {
@@ -51,7 +50,6 @@ class Bar:
     label: str  # two-line x tick label
     accuracy: float
     latency_ms: float
-    cost_per_1m: float | None  # None = no per-call cost
     partial: bool = False
 
 
@@ -93,7 +91,6 @@ def load_claude(dataset: str) -> tuple[str, dict] | None:
     return claude_name(files[0].name), dict(
         accuracy=float(correct.mean()),
         latency_ms=float(answered["latency_ms"].median()),
-        cost_per_1m=float(answered["cost_usd"].mean() * 1e6),
         n_answered=len(answered),
         n_total=len(preds),
     )
@@ -123,18 +120,17 @@ def load_groups() -> tuple[list[Group], list[str], str, int]:
             embed_ms = df.loc["embedding", "latency_ms_mean"]
             name = EMBEDDER_NAMES.get(emb, emb.title())
             bars.append(Bar(emb, f"{name} +\n{best}", float(clfs.loc[best, "accuracy"]),
-                            float(embed_ms + clfs.loc[best, "latency_ms_mean"]), None))
+                            float(embed_ms + clfs.loc[best, "latency_ms_mean"])))
             majority, title, n_test = float(df.loc["majority class", "accuracy"]), meta["dataset_title"], meta["n_test"]
         note = None
         claude = load_claude(dataset)
         if claude:
             cname, c = claude
             partial = c["n_answered"] < c["n_total"]
-            bars.append(Bar("claude", cname.replace("Claude ", "Claude\n"), c["accuracy"], c["latency_ms"],
-                            c["cost_per_1m"], partial))
+            bars.append(Bar("claude", cname.replace("Claude ", "Claude\n"), c["accuracy"], c["latency_ms"], partial))
             if partial:
                 note = (f"* Claude on {title}: {c['n_answered']:,} of {c['n_total']:,} test texts answered; "
-                        f"accuracy, latency and cost use the answered texts only.")
+                        f"accuracy and latency use the answered texts only.")
         groups.append(Group(title, n_test, majority, bars, note))
     return groups, embedders, cname, n_clf
 
@@ -175,7 +171,7 @@ def render(groups: list[Group], embedders: list[str], cname: str, n_clf: int, th
 
     plt.rcParams["font.family"] = ["Helvetica Neue", "Helvetica", "Arial", "DejaVu Sans"]
     plt.rcParams["hatch.linewidth"] = 1.2
-    W, H = 10.0, 11.0  # inches; vertical layout below is in inches from the top
+    W, H = 10.0, 9.85  # inches; vertical layout below is in inches from the top
     fig = plt.figure(figsize=(W, H), facecolor=t["surface"])
     left, right = 0.075, 0.975
     def rect(top: float, height: float) -> tuple[float, float, float, float]:
@@ -183,16 +179,14 @@ def render(groups: list[Group], embedders: list[str], cname: str, n_clf: int, th
 
     ax_acc = fig.add_axes(rect(2.9, 2.6))
     ax_lat = fig.add_axes(rect(6.65, 1.5), sharex=ax_acc)
-    ax_cost = fig.add_axes(rect(8.8, 0.55), sharex=ax_acc)
-    for ax in (ax_acc, ax_lat, ax_cost):
+    for ax in (ax_acc, ax_lat):
         ax.set_facecolor(t["surface"])
         ax.set_xlim(*xlim)
         for s in ax.spines.values():
             s.set_visible(False)
         ax.tick_params(length=0)
     for ax, title, dy in ((ax_acc, "Accuracy on the test split  ·  higher is better", 0.95),
-                          (ax_lat, "Time per text, log scale  ·  lower is better", 0.22),
-                          (ax_cost, "Cost of 1M texts", 0.12)):
+                          (ax_lat, "Time per text, log scale  ·  lower is better", 0.22)):
         pos = ax.get_position()
         fig.text(0.03, pos.y1 + dy / H, title, ha="left", va="bottom", fontsize=11.5, fontweight="bold", color=t["ink"])
 
@@ -253,23 +247,6 @@ def render(groups: list[Group], embedders: list[str], cname: str, n_clf: int, th
                 ax.annotate(fmt_ms(b.latency_ms), (x, b.latency_ms), xytext=(0, 29),
                             textcoords="offset points", ha="center", va="bottom", fontsize=10.5, color=t["ink2"])
 
-    # ---- cost (text only: the local pipeline has no per-call price to plot)
-    ax = ax_cost
-    ax.set_ylim(0, 1)
-    ax.set_yticks([])
-    plt.setp(ax.get_xticklabels(), visible=False)
-    for g, pos in zip(groups, xs):
-        for b, x in zip(g.bars, pos):
-            if b.cost_per_1m is not None:
-                ax.text(x, 0.62, f"${b.cost_per_1m:,.0f}" + ("*" if b.partial else ""), ha="center", va="center", fontsize=13,
-                        fontweight="bold", color=t["ink"])
-                ax.text(x, 0.05, "Claude Code est.", ha="center", va="center", fontsize=9.5, color=t["muted"])
-            else:  # no per-call price: show the laptop compute time for 1M texts, one at a time
-                ax.text(x, 0.62, f"{b.latency_ms * 1e6 / 3.6e6:.1f} h", ha="center", va="center", fontsize=13,
-                        fontweight="bold", color=t["ink"])
-                ax.text(x, 0.05, "laptop, no API", ha="center", va="center", fontsize=9.5, color=t["muted"])
-    ax.axhline(1, color=t["grid"], linewidth=0.8)
-
     # ---- title, legend, footnotes
     first, second = headline(groups, cname)
     fig.text(0.03, 1 - 0.25 / H, first, ha="left", va="top", fontsize=16.5, fontweight="bold", color=t["ink"])
@@ -285,10 +262,9 @@ def render(groups: list[Group], embedders: list[str], cname: str, n_clf: int, th
         "Classifiers are trained on each dataset's labeled train split; Claude gets only the label names (low effort).",
         f"Best classifier per embedder = highest test accuracy among {n_clf} classifiers (selected on the test split itself).",
         "Local time = embedding + classifier, mean per text, on an Apple M2 Pro laptop (embedder picks its device).",
-        f"Claude time = median model time per request reported by Claude Code (excludes ~1.5 s CLI startup).",
-        f"Claude cost = mean cost_usd x 1M texts: a Claude Code estimate, {CLAUDE_CODE_COST_FACTOR_NOTE}. Local = time per text x 1M, one at a time, training excluded.",
+        "Claude time = median model time per request via headless Claude Code (excludes ~1.5 s CLI startup).",
     ] + [g.claude_note for g in groups if g.claude_note]
-    fig.text(0.03, 1 - 9.6 / H, "\n".join(notes), ha="left", va="top", fontsize=9.5, color=t["ink2"], linespacing=1.5)
+    fig.text(0.03, 1 - 8.55 / H, "\n".join(notes), ha="left", va="top", fontsize=9.5, color=t["ink2"], linespacing=1.5)
     fig.savefig(path, dpi=200, facecolor=t["surface"])
     plt.close(fig)
 

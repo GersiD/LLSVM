@@ -5,8 +5,8 @@ from typing import Any
 import numpy as np
 from sklearn.cluster import KMeans
 
-from text_classifier import TextClassifier
-from text_embedder import TextEmbedder
+from llsvm.text_classifier import TextClassifier
+from llsvm.text_embedder import TextEmbedder
 
 
 class KMeansClassifier(TextClassifier):
