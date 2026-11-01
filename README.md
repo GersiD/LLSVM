@@ -10,7 +10,7 @@ Embed text with a small language model, then classify it with a classical model 
 Up and to the left is better.
 
 - **Claude is never on the frontier.** On both datasets the frontier is made up only of embedding + classifier pipelines. On Emotion, 12 of the 14 trained models beat Claude's 60.3%; only the two k-means models on MiniLM fall below it. SMS Spam is practically solved, and there Claude sits mid-pack at 98.8%.
-- **The embedder sets the speed, not the classifier.** Points form two columns: about 5 ms per text with MiniLM and 30 ms with EmbeddingGemma 2, against 1.5–1.8 s on average per Claude request on low reasoning.
+- **The embedder sets the speed, not the classifier.** Points form two columns: about 5 ms per text with MiniLM and 30 ms with EmbeddingGemma 2, against 1.5–1.8 s on average per Claude request at low effort.
 - **The smaller encoder is often enough.** On Emotion, MiniLM with an RBF SVM scores 74.6% at 6.6 ms. That is effectively tied with the best model (EmbeddingGemma 2 with an RBF SVM, 74.7%, a difference of 4 texts out of 4,000) at about a fifth of its latency.
 
 Every model's accuracy, side by side, is in the [full accuracy chart](results/plots/accuracy.png).
@@ -30,11 +30,11 @@ Through the API at list prices, the same zero-shot Claude Sonnet 5.5 call would 
 
 **The idea.** Large language models (LLMs) have completely changed the world of software development, and my personal
 field of machine learning. They are the most powerful tool yet, but that does not mean that they rule the roost for
-every task. LLMs are slow, expensive, and often overkill for simple classification tasks yet many teams in production
-write wrappers around their core buisness logic to call an LLM. What if you could get more out of less? Is there more to
+every task. LLMs are slow, expensive, and often overkill for simple classification tasks, yet many teams in production
+write wrappers around their core business logic to call an LLM. What if you could get more out of less? Is there more to
 ML than just calling LLMs? These are the questions that led me to create this repo.
 
-**What we found.** On SMS Spam, the MiniLM linear SVM ties Claude at 98.8% accuracy at nearly 50x less latency, and
+**What we found.** On SMS Spam, the MiniLM linear SVM ties Claude at 98.8% accuracy at about 360x less latency, and
 EmbeddingGemma 2 with an RBF SVM edges past it at 99.5%. Emotion is the harder test, and there the classical pipeline
 wins more readily: 74.6% for MiniLM against 60.3% for Claude, whose macro-F1 is 0.55. Even plain logistic regression on MiniLM embeddings (69.0%) beats it. The classifier adds at most 2.5 ms (the RBF SVM on Emotion), while taking about 30s to train on 16,000 texts.
 
@@ -71,7 +71,7 @@ pass it per command or set it once for your shell:
 - **Pareto chart.** Latencies within 10% of each other count as tied, so a model is on the frontier only if nothing at least as accurate is within 10% of its speed. Some frontier points still differ by only a few test texts, so treat the exact frontier membership as noisy.
 
 ## Author
-Hi! Im Gersi Doko PhD student at the University of New Hampshire studying reinforcement learning. After my internship at
+Hi! I'm Gersi Doko, a PhD student at the University of New Hampshire studying reinforcement learning. After my internship at
 Amazon NYC where I optimized LLM inference I wanted to explore how LLMs compare to classical ML models. Then this repo
 was born! Feel free to dig around, and if you have any questions or suggestions, please reach out to me at the email
 located in my resume hosted at [gersid.github.io/resume.pdf](https://gersid.github.io/assets/pdf/resume.pdf).
