@@ -12,7 +12,7 @@
   "concurrency": 8,
   "system_prompt": "You are a text classifier. Each user message is an English tweet. Label it with the main emotion its author expresses. Answer with exactly one label from: anger, fear, joy, love, sadness, surprise.",
   "served_by": {
-    "claude-sonnet-5-5": 1437
+    "claude-sonnet-5-5": 4000
   },
   "stop_reasons": {
     "success": 4000
