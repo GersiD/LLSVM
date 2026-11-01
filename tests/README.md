@@ -10,8 +10,8 @@ uv run pytest tests/test_text_embedder_base.py   # one file
 uv run pytest -v               # list each test as it runs
 ```
 
-`uv run` installs the dev dependencies (pytest) on first use. Source files in
-`src/` are importable directly (configured via `pythonpath` in `pyproject.toml`).
+`uv run` installs the dev dependencies (pytest) and the `llsvm` package from
+`src/llsvm/` (in editable mode) on first use.
 
 ## Files
 

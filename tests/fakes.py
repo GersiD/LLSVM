@@ -5,7 +5,7 @@ import re
 
 import numpy as np
 
-from text_embedder import TextEmbedder
+from llsvm.text_embedder import TextEmbedder
 
 _CLUSTER = re.compile(r"^c(\d+)\b")
 

@@ -5,7 +5,7 @@ from typing import Any
 
 import numpy as np
 
-from hashing import stable_hash
+from llsvm.hashing import stable_hash
 
 
 class TextEmbedder(ABC):

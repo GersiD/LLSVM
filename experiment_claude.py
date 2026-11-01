@@ -18,11 +18,16 @@ Writes to results/claude/:
     <dataset>_<model>_<backend>.json             run metadata (backend, model, prompt, sample, ...)
     <dataset>_<model>_<backend>_predictions.csv  one row per test text
 
-    uv run experiment-claude.py --dataset sms_spam --limit 200
-    uv run --env-file .env-secrets experiment-claude.py --backend api --model claude-opus-5-5 --max-cost 10
+    uv run experiment_claude.py --dataset sms_spam --limit 200
+    uv run --env-file .env-secrets experiment_claude.py --backend api --model claude-opus-5-5 --max-cost 10
+    uv run experiment_claude.py --dataset sms_spam --limit 200 --resume   # retry failed or unsent texts
 
 The script prints an estimate, asks before sending requests, and stops sending
-once (notional or real) spend reaches --max-cost.
+once (notional or real) spend in this run reaches --max-cost, or after
+--max-failures replies in a row come back without a label (e.g. after hitting a
+usage limit). Texts without a label are recorded as failures with NaN latency
+and left out of the scores; --resume keeps the labelled rows of the previous
+run's predictions and sends only the rest.
 """
 
 import argparse
@@ -83,8 +88,12 @@ def label_schema(labels: list[str]) -> dict:
 
 
 def failed(stop_reason: str, wall_ms: float) -> dict:
-    return {"pred": None, "latency_ms": wall_ms, "wall_ms": wall_ms, "stop_reason": stop_reason,
+    """A request that produced no label. Its latency is NaN so it never enters the latency stats."""
+    return {"pred": None, "latency_ms": np.nan, "wall_ms": wall_ms, "stop_reason": stop_reason,
             "served_by": None, "input_tokens": 0, "output_tokens": 0, "cost_usd": 0.0}
+
+
+RESULT_COLUMNS = list(failed("", 0.0))  # per-text fields every classify() returns
 
 
 # --- Backend: Messages API ----------------------------------------------------
@@ -121,7 +130,8 @@ def api_classifier(model: str, effort: str, system: str, labels: list[str]) -> C
                 pass
         tokens_in, tokens_out = response.usage.input_tokens, response.usage.output_tokens
         return {
-            "pred": pred, "latency_ms": wall_ms, "wall_ms": wall_ms, "stop_reason": response.stop_reason,
+            "pred": pred, "latency_ms": wall_ms if pred is not None else np.nan, "wall_ms": wall_ms,
+            "stop_reason": response.stop_reason,
             "served_by": response.model, "input_tokens": tokens_in, "output_tokens": tokens_out,
             "cost_usd": (tokens_in * price_in + tokens_out * price_out) / 1e6,
         }
@@ -159,10 +169,13 @@ def claude_code_classifier(model: str, effort: str, system: str, labels: list[st
         except json.JSONDecodeError:
             return failed(f"exit {proc.returncode}", wall_ms)
 
+        label = None if out.get("is_error") else (out.get("structured_output") or {}).get("label")
+        if label is None:  # e.g. a usage-limit reply: subtype "success" but no label, no tokens, no model time
+            return failed(f"no label ({out.get('subtype', 'unknown')})", wall_ms)
+
         usage = out.get("usage") or {}
-        structured = out.get("structured_output") or {}
         return {
-            "pred": None if out.get("is_error") else structured.get("label"),
+            "pred": label,
             "latency_ms": out.get("duration_api_ms", wall_ms),
             "wall_ms": wall_ms,
             "stop_reason": out.get("subtype", "unknown"),
@@ -183,7 +196,26 @@ BACKENDS = {"claude-code": claude_code_classifier, "api": api_classifier}
 
 
 def percentiles(prefix: str, ms: np.ndarray) -> dict:
+    stats = ("mean", "p90", "p95", "p99")
+    if not len(ms):
+        return {f"{prefix}_{s}": np.nan for s in stats}
     return {f"{prefix}_mean": ms.mean(), **{f"{prefix}_p{q}": np.percentile(ms, q) for q in (90, 95, 99)}}
+
+
+def previous_run(stem: str, effort: str, system: str) -> tuple[dict[str, dict], float]:
+    """For --resume: the labelled rows of the last run, by text, and that run's predict_seconds."""
+    paths = [OUT / f"{stem}{suffix}" for suffix in ("_predictions.csv", ".json", ".csv")]
+    if missing := [p.name for p in paths if not p.exists()]:
+        sys.exit(f"--resume: no previous run to resume (missing {', '.join(missing)} in results/claude/)")
+    meta = json.loads(paths[1].read_text())
+    if (meta["effort"], meta["system_prompt"]) != (effort, system):
+        sys.exit("--resume: the previous run used a different effort or system prompt; rerun without --resume")
+    # Only an empty cell is missing: a tweet that reads "NA" or "null" must stay text.
+    old = pd.read_csv(paths[0], keep_default_na=False, na_values=[""], dtype={"text": str, "label": str, "pred": str})
+    labelled = old[old["pred"].notna()]
+    rows = {text: dict(zip(RESULT_COLUMNS, values))
+            for text, *values in labelled[["text", *RESULT_COLUMNS]].itertuples(index=False)}
+    return rows, float(pd.read_csv(paths[2], index_col="classifier")["predict_seconds"].iloc[0])
 
 
 def main() -> None:
@@ -196,7 +228,12 @@ def main() -> None:
     parser.add_argument("--concurrency", type=int, default=None,
                         help="requests in flight at once (default: 4 for claude-code, 8 for api)")
     parser.add_argument("--max-cost", type=float, default=3.0,
-                        help="stop sending requests once spend reaches this many USD (default: 3)")
+                        help="stop sending requests once spend in this run reaches this many USD (default: 3)")
+    parser.add_argument("--max-failures", type=int, default=10,
+                        help="stop sending requests after this many replies in a row without a label (default: 10)")
+    parser.add_argument("--resume", action="store_true",
+                        help="keep the labelled rows of the previous run with the same dataset, model and backend, "
+                             "and send only the failed or unsent texts")
     parser.add_argument("--yes", action="store_true", help="skip the confirmation prompt")
     args = parser.parse_args()
     concurrency = args.concurrency or (4 if args.backend == "claude-code" else 8)
@@ -206,24 +243,32 @@ def main() -> None:
     test = sample(full_test, args.limit)
     system = (f"You are a text classifier. Each user message is {TASKS[args.dataset]} "
               f"Answer with exactly one label from: {', '.join(labels)}.")
+    stem = f"{args.dataset}_{args.model}_{args.backend}"
+
+    previous, previous_seconds = previous_run(stem, args.effort, system) if args.resume else ({}, 0.0)
+    rows: list[dict | None] = [previous.get(text) for text in test["text"]]
+    todo_items = [(i, text) for i, text in enumerate(test["text"]) if rows[i] is None]
+    reused = len(test) - len(todo_items)
 
     price_in, price_out = PRICES[args.model]
-    estimate = len(test) * (EST_TOKENS[0] * price_in + EST_TOKENS[1] * price_out) / 1e6
+    estimate = len(todo_items) * (EST_TOKENS[0] * price_in + EST_TOKENS[1] * price_out) / 1e6
     if args.backend == "claude-code":
         estimate *= CLAUDE_CODE_COST_FACTOR
     cost_kind = "notional, counts against your Claude plan's usage limits" if args.backend == "claude-code" else "billed"
     print(f"{args.dataset}: {len(test):,} test texts, labels {labels}")
+    if args.resume:
+        print(f"resuming: {reused:,} texts already labelled, {len(todo_items):,} to send")
     print(f"backend {args.backend}, model {args.model}, effort {args.effort}, concurrency {concurrency}")
     print(f"rough cost estimate ${estimate:.2f} ({cost_kind}), hard cap ${args.max_cost:.2f}")
-    if not args.yes and input("Send these requests? [y/N] ").strip().lower() != "y":
+    if todo_items and not args.yes and input("Send these requests? [y/N] ").strip().lower() != "y":
         sys.exit("aborted")
 
     classify = BACKENDS[args.backend](args.model, args.effort, system, labels)
-    rows: list[dict | None] = [None] * len(test)
-    todo = iter(enumerate(test["text"]))
-    spent, capped = 0.0, False
+    todo = iter(todo_items)
+    spent, capped, failure_streak, halted = 0.0, False, 0, False
     start = time.perf_counter()
-    with ThreadPoolExecutor(concurrency) as pool, tqdm(total=len(test), desc=args.model, unit="req") as bar:
+    with (ThreadPoolExecutor(concurrency) as pool,
+          tqdm(total=len(test), initial=reused, desc=args.model, unit="req") as bar):
         pending = {}
 
         def submit_next() -> None:
@@ -238,38 +283,49 @@ def main() -> None:
                 i = pending.pop(future)
                 rows[i] = future.result()
                 spent += rows[i]["cost_usd"]
+                failure_streak = failure_streak + 1 if rows[i]["pred"] is None else 0
                 bar.update()
                 bar.set_postfix_str(f"${spent:.2f}")
-                if spent < args.max_cost:
-                    submit_next()
-                else:
+                if spent >= args.max_cost:
                     capped = True
-    wall_seconds = time.perf_counter() - start
+                elif failure_streak >= args.max_failures and not halted:
+                    halted = True
+                    tqdm.write(f"{failure_streak} replies in a row without a label "
+                               f"(last: {rows[i]['stop_reason']}); not sending more")
+                elif not capped and not halted:
+                    submit_next()
+    wall_seconds = previous_seconds + time.perf_counter() - start
 
     finished = [i for i, r in enumerate(rows) if r is not None]
     if capped:
         print(f"stopped at the ${args.max_cost:.2f} cap after {len(finished):,} of {len(test):,} texts")
     test = test.iloc[finished].reset_index(drop=True)
-    preds = pd.concat([test, pd.DataFrame([rows[i] for i in finished])], axis=1)
+    preds = pd.concat([test, pd.DataFrame([rows[i] for i in finished], columns=RESULT_COLUMNS)], axis=1)
 
-    y_pred = preds["pred"].fillna("<none>")
+    # A text without a label is an infrastructure failure (usage limit, timeout, error), not a wrong answer:
+    # it is counted in n_failed and left out of the scores and latency stats, and --resume retries it.
+    answered = preds[preds["pred"].notna()]
+    n_failed = len(preds) - len(answered)
+    y_true, y_pred = answered["label"], answered["pred"]
     summary = pd.DataFrame([{
         "classifier": args.model,
         "family": "LLM",
-        "macro_f1": f1_score(preds["label"], y_pred, labels=labels, average="macro"),
-        "accuracy": accuracy_score(preds["label"], y_pred),
+        "macro_f1": f1_score(y_true, y_pred, labels=labels, average="macro") if len(answered) else np.nan,
+        "accuracy": accuracy_score(y_true, y_pred) if len(answered) else np.nan,
         "train_seconds": 0.0,
         "predict_seconds": wall_seconds,
-        **percentiles("latency_ms", preds["latency_ms"].to_numpy()),
-        **percentiles("wall_ms", preds["wall_ms"].to_numpy()),
-        "n_failed": int(preds["pred"].isna().sum()),
+        **percentiles("latency_ms", answered["latency_ms"].to_numpy(dtype=float)),
+        **percentiles("wall_ms", answered["wall_ms"].to_numpy(dtype=float)),
+        "n_failed": n_failed,
         "input_tokens": int(preds["input_tokens"].sum()),
         "output_tokens": int(preds["output_tokens"].sum()),
         "cost_usd": preds["cost_usd"].sum(),
     }]).set_index("classifier")
     print(summary.round(4).T.to_string())
+    if n_failed or len(finished) < len(rows):
+        print(f"{n_failed:,} texts failed and {len(rows) - len(finished):,} were not sent; "
+              f"rerun with the same arguments plus --resume to fill them in")
 
-    stem = f"{args.dataset}_{args.model}_{args.backend}"
     OUT.mkdir(parents=True, exist_ok=True)
     summary.to_csv(OUT / f"{stem}.csv", lineterminator="\n")
     preds.to_csv(OUT / f"{stem}_predictions.csv", index=False, lineterminator="\n")
@@ -279,8 +335,11 @@ def main() -> None:
         "model": args.model,
         "effort": args.effort,
         "n_test": len(test),
+        "n_scored": len(answered),
         "test_subsample": len(test) < len(full_test),
+        "resumed_rows": reused,
         "stopped_at_cost_cap": capped,
+        "stopped_after_failures": halted,
         "max_cost_usd": args.max_cost,
         "cost_is_notional": args.backend == "claude-code",
         "latency_ms_is": "model time reported by Claude Code" if args.backend == "claude-code" else "request wall time",

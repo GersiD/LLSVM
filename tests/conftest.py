@@ -1,12 +1,12 @@
 import pytest
 
 from fakes import FakeEmbedder
-from huggingface_text_embedder import HuggingFaceTextEmbedder
-from kmeans import KMeansClassifier
-from logistic_regression import LogisticRegressionClassifier
-from svm import KernelSVM, LinearSVM
-from xgboost_classifier import XGBoostClassifier
-from text_embedder import TextEmbedder
+from llsvm.huggingface_text_embedder import HuggingFaceTextEmbedder
+from llsvm.kmeans import KMeansClassifier
+from llsvm.logistic_regression import LogisticRegressionClassifier
+from llsvm.svm import KernelSVM, LinearSVM
+from llsvm.xgboost_classifier import XGBoostClassifier
+from llsvm.text_embedder import TextEmbedder
 
 # Register every TextEmbedder implementation here as a zero-arg factory so it
 # runs the contract tests in test_text_embedder_contract.py. Use

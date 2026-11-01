@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 from fakes import FakeEmbedder
-from svm import KernelSVM, LinearSVM
+from llsvm.svm import KernelSVM, LinearSVM
 
 
 @pytest.mark.parametrize(

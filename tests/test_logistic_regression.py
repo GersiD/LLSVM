@@ -3,7 +3,7 @@
 import pytest
 
 from fakes import FakeEmbedder
-from logistic_regression import LogisticRegressionClassifier
+from llsvm.logistic_regression import LogisticRegressionClassifier
 
 
 @pytest.mark.parametrize("kwargs", [{"C": 2.0}, {"class_weight": "balanced"}, {"max_iter": 50}], ids=lambda kw: next(iter(kw)))

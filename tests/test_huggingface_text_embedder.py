@@ -5,7 +5,7 @@ import re
 import numpy as np
 import pytest
 
-from huggingface_text_embedder import HuggingFaceTextEmbedder
+from llsvm.huggingface_text_embedder import HuggingFaceTextEmbedder
 
 pytestmark = pytest.mark.slow
 

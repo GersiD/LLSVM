@@ -3,7 +3,7 @@
 import numpy as np
 
 from fakes import FakeEmbedder
-from kmeans import KMeansClassifier
+from llsvm.kmeans import KMeansClassifier
 
 
 def test_k_reaches_config_hash():

@@ -32,16 +32,15 @@ import pandas as pd
 from sklearn.metrics import accuracy_score, f1_score
 from tqdm import tqdm
 
-ROOT = Path(__file__).resolve().parent
-sys.path.insert(0, str(ROOT / "src"))  # flat layout: modules live in src/
+from llsvm.huggingface_text_embedder import HuggingFaceTextEmbedder
+from llsvm.kmeans import KMeansClassifier
+from llsvm.logistic_regression import LogisticRegressionClassifier
+from llsvm.svm import KernelSVM, LinearSVM
+from llsvm.text_classifier import TextClassifier
+from llsvm.text_embedder import TextEmbedder
+from llsvm.xgboost_classifier import XGBoostClassifier
 
-from huggingface_text_embedder import HuggingFaceTextEmbedder  # noqa: E402
-from kmeans import KMeansClassifier  # noqa: E402
-from logistic_regression import LogisticRegressionClassifier  # noqa: E402
-from svm import KernelSVM, LinearSVM  # noqa: E402
-from text_classifier import TextClassifier  # noqa: E402
-from text_embedder import TextEmbedder  # noqa: E402
-from xgboost_classifier import XGBoostClassifier  # noqa: E402
+ROOT = Path(__file__).resolve().parent
 
 # --- Datasets -----------------------------------------------------------------
 

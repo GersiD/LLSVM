@@ -7,7 +7,7 @@ import numpy as np
 from huggingface_hub import snapshot_download
 from sentence_transformers import SentenceTransformer
 
-from text_embedder import TextEmbedder
+from llsvm.text_embedder import TextEmbedder
 
 # Weights for other runtimes that sentence-transformers (PyTorch) never loads.
 # Many repos ship these too, often several times the size of the model itself.
