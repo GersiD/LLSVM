@@ -1,4 +1,4 @@
-# LLSVM
+# LLSVM - Large Language SVM
 
 Embed text with a small language model, then classify it with a classical model such as an SVM. On both of our benchmarks this matches or beats zero-shot popular LLMs, at 47–360× lower latency per text and with no per-call cost.
 
