@@ -1,4 +1,7 @@
-"""Accuracy vs. latency per dataset, with the Pareto frontier: the methods no other method beats on both."""
+"""Accuracy vs. latency per dataset, with the Pareto frontier: the methods no other method beats on both.
+
+Latencies within LATENCY_TOL of each other count as equal, since per-text timings that close are within
+measurement noise (e.g. k-means k=1 vs. k=5 on MiniLM differ by microseconds)."""
 
 from pathlib import Path
 
@@ -13,16 +16,18 @@ from figures.data import DATASET_NAMES, SHORT_NAMES, Summary, method_of
 # and EmbeddingGemma 2 points sit in separate columns (and differ in brightness).
 LABEL_SIZE = 8.5  # points
 LABEL_GAP = 11  # minimum vertical distance between labels in one column, in points
+LATENCY_TOL = 0.10  # latencies within 10% of each other are treated as tied
+
+
+def dominates(q: tuple[float, float, str], p: tuple[float, float, str]) -> bool:
+    """q is at least as accurate as p and not meaningfully slower, and strictly better on one of the two."""
+    (q_lat, q_acc, _), (p_lat, p_acc, _) = q, p
+    return q_acc >= p_acc and q_lat <= p_lat * (1 + LATENCY_TOL) and (q_acc > p_acc or q_lat < p_lat)
 
 
 def frontier(points: list[tuple[float, float, str]]) -> list[tuple[float, float, str]]:
-    """(latency, accuracy, key) points that no other point beats on both: faster and at least as accurate."""
-    best, front = -1.0, []
-    for lat, acc, key in sorted(points, key=lambda p: (p[0], -p[1])):
-        if acc > best:
-            front.append((lat, acc, key))
-            best = acc
-    return front
+    """(latency, accuracy, key) points that no other point dominates, fastest first."""
+    return sorted((p for p in points if not any(dominates(q, p) for q in points if q is not p)), key=lambda p: p[0])
 
 
 def spread(ys: np.ndarray) -> np.ndarray:
@@ -77,7 +82,6 @@ def pareto(summary: Summary, theme: str, path: Path) -> None:
         points = [(summary.latency_ms[k][dataset], summary.accuracy[k][dataset], k)
                   for k in keys if dataset in summary.latency_ms[k]]
         front = frontier(points)
-        on_front = {k for _, _, k in front}
 
         # Frontier as a step line: from each frontier point, flat until the next (slower, more accurate) one.
         xs = [p[0] for p in front] + [xlim[1]]
@@ -85,10 +89,7 @@ def pareto(summary: Summary, theme: str, path: Path) -> None:
         ax.step(xs, ys, where="post", color=t["fg2"], linewidth=1.2, linestyle="--", zorder=1)
 
         for lat, acc, key in points:
-            ax.scatter(lat, acc, s=90 if key in on_front else 55, color=style.color(key, summary, theme),
-                       marker=style.marker(key, summary),
-                       edgecolor=t["fg"] if key in on_front else t["bg"], linewidth=1.4 if key in on_front else 0.8,
-                       zorder=3)
+            ax.scatter(lat, acc, s=60, color=style.color(key, summary, theme), edgecolor=t["bg"], linewidth=0.8, zorder=3)
 
         accs = [p[1] for p in points]
         pad = (max(accs) - min(accs)) * 0.08
@@ -106,7 +107,7 @@ def pareto(summary: Summary, theme: str, path: Path) -> None:
     style.legend(axes[-1], summary, keys, theme)
     legend = axes[-1].get_legend()  # add the frontier to the shared legend
     handles = legend.legend_handles + [Line2D([], [], color=t["fg2"], linestyle="--", linewidth=1.2,
-                                              label="Pareto frontier (outlined points)")]
+                                              label="Pareto frontier")]
     axes[-1].legend(handles=handles, loc="center left", bbox_to_anchor=(1.01, 0.5), frameon=False, fontsize=9.5,
                     labelcolor=t["fg"], handlelength=1.2, labelspacing=0.5)
     fig.tight_layout()  # fix the layout before converting point positions to display coordinates

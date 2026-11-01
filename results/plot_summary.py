@@ -1,9 +1,8 @@
 """Headline figures: classical classifiers on small-LM embeddings vs. a zero-shot Claude baseline.
 
 Writes to results/plots/, each with a -dark variant for GitHub's dark mode:
-    accuracy.png   test accuracy, datasets on the X axis, one bar per method
-    speed.png      time per text (log scale), same layout
-    pareto.png     accuracy vs. time per text per dataset, with the Pareto frontier
+    pareto.png     accuracy vs. time per text per dataset, with the Pareto frontier (the README's chart)
+    accuracy.png   test accuracy, datasets on the X axis, one bar per method (the full breakdown)
 
 The code lives in results/figures/ (data.py loads results, style.py holds the gruvbox look,
 bars.py and pareto.py draw). The caveats live in the README, not in the figures.
@@ -17,7 +16,7 @@ from figures import bars, pareto, style
 from figures.data import load
 
 PLOTS = Path(__file__).resolve().parent / "plots"
-FIGURES = {"accuracy": bars.accuracy, "speed": bars.speed, "pareto": pareto.pareto}
+FIGURES = {"pareto": pareto.pareto, "accuracy": bars.accuracy}
 
 
 def main() -> None:

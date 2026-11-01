@@ -2,32 +2,24 @@
 
 Embed text with a small language model, then classify it with a classical model such as an SVM. On both of our benchmarks this matches or beats zero-shot Claude Sonnet 5.5, at 47–360× lower latency per text and with no per-call cost.
 
-<!-- TODO: add a three-bullet takeaway or a short "when to use this vs. an LLM API" guide here, above the figures.
+<!-- TODO: add a three-bullet takeaway or a short "when to use this vs. an LLM API" guide here, above the chart.
      e.g. stable labels + high volume + latency or privacy limits -> embeddings + classical classifier;
      no labeled data, categories that change often, or low volume -> prompt an LLM. -->
 
 We embed each text with one of two small encoders, MiniLM or EmbeddingGemma 2, and train seven classical classifiers on the embeddings. We compare them with Claude Sonnet 5.5 labeling the same test texts zero-shot, on two datasets: Emotion (tweets, 6 classes) and SMS Spam (2 classes). The classifiers learn from each dataset's labeled training split (16,000 and 4,136 texts), while Claude gets only the label names, so this is a trained pipeline against an untrained one.
 
-**Accuracy.** On Emotion, 12 of the 14 trained models beat Claude (60.3%). Only the two k-means models on MiniLM fall below it. SMS Spam is close to solved: guessing "not spam" every time already scores 87%. There, every model lands between 94% and 99.5%, and Claude sits mid-pack at 98.8%.
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="results/plots/accuracy-dark.png">
-  <img alt="Test accuracy on Emotion and SMS Spam for every classifier on MiniLM and EmbeddingGemma 2 embeddings, zero-shot Claude Sonnet 5.5, and the majority class" src="results/plots/accuracy.png">
-</picture>
-
-**Speed.** The embedder sets the speed, not the classifier: about 5 ms per text with MiniLM and 30 ms with EmbeddingGemma 2, against 1.5–1.8 s on average per Claude request.
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="results/plots/speed-dark.png">
-  <img alt="Time per text on a log scale for the same methods: about 5 ms with MiniLM, 30 ms with EmbeddingGemma 2, and 1.5-1.8 s for Claude" src="results/plots/speed.png">
-</picture>
-
-**The trade-off.** The dashed line is the Pareto frontier: the methods for which no other method is at least as fast and at least as accurate. On both datasets it is made up only of embedding + classifier pipelines, and Claude is slower and no more accurate than the best of them. Within the frontier, the smaller encoder is often enough. On Emotion, MiniLM with an RBF SVM scores 74.6% at 6.6 ms, effectively tied with the best model (EmbeddingGemma 2 with an RBF SVM, 74.7%, a difference of 4 texts out of 4,000) at about a fifth of its latency.
-
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="results/plots/pareto-dark.png">
   <img alt="Accuracy against time per text for every method on Emotion and SMS Spam, with the Pareto frontier; Claude is off the frontier on both" src="results/plots/pareto.png">
 </picture>
+
+Up and to the left is better. The dashed line is the Pareto frontier: the methods for which no other method is at least as accurate and at most 10% slower. Closer timings than that are within measurement noise.
+
+- **Claude is never on the frontier.** On both datasets the frontier is made up only of embedding + classifier pipelines. On Emotion, 12 of the 14 trained models beat Claude's 60.3%; only the two k-means models on MiniLM fall below it. SMS Spam is close to solved (guessing "not spam" every time already scores 87%), and there Claude sits mid-pack at 98.8%.
+- **The embedder sets the speed, not the classifier.** Points form two columns: about 5 ms per text with MiniLM and 30 ms with EmbeddingGemma 2, against 1.5–1.8 s on average per Claude request.
+- **The smaller encoder is often enough.** On Emotion, MiniLM with an RBF SVM scores 74.6% at 6.6 ms. That is effectively tied with the best model (EmbeddingGemma 2 with an RBF SVM, 74.7%, a difference of 4 texts out of 4,000) at about a fifth of its latency.
+
+Every model's accuracy, side by side, is in the [full accuracy chart](results/plots/accuracy.png).
 
 | | SMS Spam (2 classes) | Emotion (6 classes) |
 |---|---|---|
@@ -84,7 +76,7 @@ Through the API at list prices, the same zero-shot Claude Sonnet 5.5 call would 
 
 Each `experiment.py` run goes through every embedder in `EMBEDDERS` and writes `results/<dataset>_<embedder>.csv` and `results/<dataset>_<embedder>.json` for each. `experiment_claude.py` writes to `results/claude/`. Then:
 
-    uv run results/plot_summary.py   # headline figures: results/plots/accuracy.png, speed.png, pareto.png
+    uv run results/plot_summary.py   # results/plots/pareto.png (the chart above) and accuracy.png
     uv run results/plot.py           # per-run plots: results/plots/<dataset>_<embedder>.png
 
 Per-run plots compare all seven classifiers, e.g. [SMS Spam with MiniLM](results/plots/sms_spam_minilm.png).
@@ -101,10 +93,10 @@ pass it per command or set it once for your shell:
 ## Notes
 
 - **Trained vs. zero-shot.** Every classifier is trained on its dataset's labeled train split. Claude Sonnet 5.5 gets only the label names, at low effort, one request per text.
-- **Accuracy** is measured on the test split: 4,000 texts for Emotion and 1,035 for SMS Spam. The table's "best classifier" rows are the most accurate of seven, picked on the test split. The figures show all seven instead.
+- **Accuracy** is measured on the test split: 4,000 texts for Emotion and 1,035 for SMS Spam. The table's "best classifier" rows are the most accurate of seven, picked on the test split. The charts show all seven instead.
 - **Local time** is embedding + classifier for one text at a time, the mean over 100 test texts on an Apple M2 Pro laptop. The embedder picks its own device. Training time is not included.
 - **Claude time** is the mean model time per request reported by headless Claude Code (the same statistic as local time). It leaves out about 1.1 s per request of CLI startup and overhead, but includes the network round trip and Claude Code's own prompt.
-- **Pareto chart.** The majority class is left out: it has no model to time. Several frontier points differ by fractions of a millisecond or a few test texts, so treat the exact frontier membership as noisy.
+- **Pareto chart.** The majority class is left out: it has no model to time. Latencies within 10% of each other count as tied, so a model is on the frontier only if nothing at least as accurate is within 10% of its speed. Some frontier points still differ by only a few test texts, so treat the exact frontier membership as noisy.
 
 <!-- TODO: author section: your name, links (site, LinkedIn, Google Scholar), one line on how this connects to your
      research, and a "what I'd extend next" line (e.g. on-device benchmark, more datasets, fine-tuned small transformer). -->

@@ -29,8 +29,7 @@ def bar_chart(summary: Summary, values: dict[str, dict[str, float]], theme: str,
     for key, off in zip(methods, offsets):
         xs = x + off * width
         ys = [values[key].get(d, np.nan) for d in summary.datasets]
-        ax.bar(xs, ys, width * 0.94, color=style.color(key, summary, theme), hatch=style.hatch(key, summary),
-               edgecolor=t["bg"], linewidth=0, zorder=2)
+        ax.bar(xs, ys, width * 0.94, color=style.color(key, summary, theme), zorder=2)
         for xi, yi in zip(xs, ys):
             if not np.isnan(yi):
                 ax.annotate(fmt(yi), (xi, yi), xytext=(0, 3), textcoords="offset points", rotation=90,
@@ -55,7 +54,3 @@ def bar_chart(summary: Summary, values: dict[str, dict[str, float]], theme: str,
 
 def accuracy(summary: Summary, theme: str, path: Path) -> None:
     bar_chart(summary, summary.accuracy, theme, path, ylabel="accuracy", fmt=lambda v: f"{v:.1%}")
-
-
-def speed(summary: Summary, theme: str, path: Path) -> None:
-    bar_chart(summary, summary.latency_ms, theme, path, ylabel="ms per text (log scale)", fmt=style.fmt_ms, log=True)

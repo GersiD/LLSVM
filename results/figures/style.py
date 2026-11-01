@@ -1,11 +1,12 @@
 """Gruvbox look shared by every headline figure: themes, colours, legend and axis styling.
 
 One hue per classifier family (neutral gruvbox accents on the light background, bright ones on dark):
-both k-means variants share purple, and the second one is hatched (bars) or square (points). Each embedder
-then shifts the hue's brightness, first embedder lightest, so a classifier's bars or points read as one
-colour and the embedder as light vs. dark. Claude is orange; the majority class is grey.
+both k-means variants look identical and share one legend entry; only their labels tell them apart. Each
+embedder then shifts the hue's brightness, first embedder lightest, so a classifier's bars or points read as
+one colour and the embedder as light vs. dark. Claude is orange; the majority class is grey.
 """
 
+import os
 from pathlib import Path
 
 import matplotlib
@@ -16,7 +17,7 @@ import numpy as np
 from matplotlib.colors import to_rgb
 from matplotlib.patches import Patch
 
-from figures.data import EMBEDDER_NAMES, Summary, embedder_of, legend_label, method_of
+from figures.data import EMBEDDER_NAMES, FULL_NAMES, SHORT_NAMES, Summary, embedder_of, legend_label, method_of
 
 FONTS = ["FiraCode Nerd Font", "Fira Code", "Menlo", "DejaVu Sans Mono", "monospace"]
 
@@ -29,8 +30,6 @@ GRUVBOX = {
 CLASSIFIER_ACCENTS = {"k-means (k=1)": "purple", "k-means (k=5)": "purple", "logistic regression": "yellow",
                       "QDA": "aqua", "linear SVM": "blue", "RBF SVM": "green", "XGBoost": "red"}
 SPARE_ACCENTS = ["aqua", "blue", "green", "red", "yellow", "purple"]  # cycled for classifiers not listed above
-HATCHES = [None, "////", "...."]  # 1st, 2nd, 3rd classifier sharing an accent (bars and legend swatches)
-MARKERS = ["o", "s", "D"]  # the same, for points
 BRIGHTNESS = (0.35, -0.3)  # per embedder: > 0 mixes toward white, < 0 toward black (more embedders: interpolated)
 THEMES = {
     "light": dict(bg="#fbf1c7", fg="#3c3836", fg2="#665c54", grid="#d5c4a1", accent=1, suffix=""),
@@ -66,27 +65,9 @@ def accent(method: str, summary: Summary) -> str:
     return SPARE_ACCENTS[unlisted.index(method) % len(SPARE_ACCENTS)]
 
 
-def variant(key: str, summary: Summary) -> int:
-    """0 for the first classifier with this accent, 1 for the second (k-means k=5), ..."""
-    method = method_of(key)
-    if ":" not in key and method not in summary.classifiers:
-        return 0  # Claude, majority class
-    same = [c for c in summary.classifiers if accent(c, summary) == accent(method, summary)]
-    return same.index(method) % len(HATCHES)
-
-
-def hatch(key: str, summary: Summary) -> str | None:
-    return HATCHES[variant(key, summary)]
-
-
-def marker(key: str, summary: Summary) -> str:
-    return MARKERS[variant(key, summary)]
-
-
 def new_figure(theme: str, ncols: int = 1, **kwargs):
     t = THEMES[theme]
     plt.rcParams["font.family"] = FONTS
-    plt.rcParams["hatch.linewidth"] = 1.0
     fig, axes = plt.subplots(1, ncols, facecolor=t["bg"], **kwargs)
     for ax in np.atleast_1d(axes):
         ax.set_facecolor(t["bg"])
@@ -104,12 +85,15 @@ def style_axes(ax, theme: str, grid: str = "y") -> None:
 
 
 def legend(ax, summary: Summary, keys: list[str], theme: str) -> None:
-    """One swatch per method shown, then one grey swatch per embedder showing its brightness, right of `ax`."""
+    """One swatch per colour shown (methods that share a colour share the swatch, e.g. "K-Means (km1, km5)"),
+    then one grey swatch per embedder showing its brightness, right of `ax`."""
     t = THEMES[theme]
     claude = dict(summary.methods).get("claude", "Claude")
-    shown = list(dict.fromkeys(method_of(k) for k in keys))
-    handles = [Patch(facecolor=color(m, summary, theme), hatch=hatch(m, summary), edgecolor=t["bg"], linewidth=0,
-                     label=legend_label(m, claude)) for m in shown]
+    by_accent: dict[str, list[str]] = {}
+    for m in dict.fromkeys(method_of(k) for k in keys):
+        by_accent.setdefault(accent(m, summary), []).append(m)
+    handles = [Patch(color=color(ms[0], summary, theme), label=legend_label(ms[0], claude) if len(ms) == 1
+                     else shared_label(ms)) for ms in by_accent.values()]
     handles.append(Patch(color="none", label=""))
     gray = GRUVBOX["gray"][t["accent"]]
     n = len(summary.embedders)
@@ -117,6 +101,13 @@ def legend(ax, summary: Summary, keys: list[str], theme: str) -> None:
                 for i, e in enumerate(summary.embedders)]
     ax.legend(handles=handles, loc="center left", bbox_to_anchor=(1.01, 0.5), frameon=False, fontsize=9.5,
               labelcolor=t["fg"], handlelength=1.2, labelspacing=0.5)
+
+
+def shared_label(methods: list[str]) -> str:
+    """["k-means (k=1)", "k-means (k=5)"] -> "K-Means (km1, km5)": the full names' common part, then each short name."""
+    fulls = [FULL_NAMES.get(m, m) for m in methods]
+    common = os.path.commonprefix(fulls).rstrip(", =k").strip() or " / ".join(fulls)
+    return f"{common} ({', '.join(SHORT_NAMES.get(m, m) for m in methods)})"
 
 
 def save(fig, path: Path, theme: str) -> None:
