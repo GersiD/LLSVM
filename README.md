@@ -74,4 +74,4 @@ pass it per command or set it once for your shell:
 Hi! I'm Gersi Doko, a PhD student at the University of New Hampshire studying reinforcement learning. After my internship at
 Amazon NYC where I optimized LLM inference I wanted to explore how LLMs compare to classical ML models. Then this repo
 was born! Feel free to dig around, and if you have any questions or suggestions, please reach out to me at the email
-located in my resume hosted at [my resume](https://gersid.github.io/assets/pdf/resume.pdf).
+located in [my resume](https://gersid.github.io/assets/pdf/resume.pdf).
