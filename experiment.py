@@ -1,14 +1,15 @@
 """Compare classifiers on a text classification dataset.
 
-Trains every classifier in `make_classifiers` on the dataset's train split (all
-sharing one embedding pass) and scores it on the test split. Writes scores,
-train time, batch predict time and single-text latency (mean, p90, p95, p99) for
-each classifier and for the embedder to results/<dataset>_<embedder>.csv, and
+For every embedder in EMBEDDERS, trains every classifier in `make_classifiers` on
+the dataset's train split (all sharing one embedding pass) and scores it on the
+test split. Writes scores, train time, batch predict time and single-text latency
+(mean, p90, p95, p99) for each classifier and for the embedder to
+results/<dataset>_<embedder>.csv, and
 the run's metadata (dataset, embedder, split sizes) to results/<dataset>_<embedder>.json.
 Plotting is separate: see results/plot.py.
 
-    uv run experiment.py                                   # sms_spam, minilm
-    uv run experiment.py --dataset emotion --embedder minilm
+    uv run experiment.py                     # sms_spam, all embedders
+    uv run experiment.py --dataset emotion
 
 Each dataset lives in datasets/<name>/, whose download.py writes data/train.parquet
 and data/test.parquet with `text` and `label` columns. To add a dataset, add that
@@ -17,6 +18,7 @@ make_classifiers.
 """
 
 import argparse
+import gc
 import json
 import sys
 import time
@@ -66,6 +68,7 @@ def load_split(dataset: str, split: str) -> Split:
 # --- Embedders and classifiers ------------------------------------------------
 
 EMBEDDERS: dict[str, Callable[[], TextEmbedder]] = {
+    "gemma2": lambda: HuggingFaceTextEmbedder("google/embeddinggemma-2", progress=True),
     "minilm": lambda: HuggingFaceTextEmbedder("sentence-transformers/all-MiniLM-L6-v2", progress=True),
 }
 
@@ -113,8 +116,12 @@ class CachedEmbedder(TextEmbedder):
     def size(self) -> int:
         return self.inner.size
 
+    def add(self, texts: list[str], vecs: np.ndarray) -> None:
+        """Store embeddings already computed by the inner embedder."""
+        self._cache.update(zip(texts, vecs))
+
     def _embed(self, texts: list[str]) -> np.ndarray:
-        missing = list(dict.fromkeys(t for t in texts if t not in self._cache))
+        missing =list(dict.fromkeys(t for t in texts if t not in self._cache))
         if missing:
             self._cache.update(zip(missing, self.inner.embed(missing)))
         return np.stack([self._cache[t] for t in texts])
@@ -122,7 +129,7 @@ class CachedEmbedder(TextEmbedder):
 
 # --- Experiment ---------------------------------------------------------------
 
-LATENCY_SAMPLES = 1000  # test texts timed one at a time for latency percentiles
+LATENCY_SAMPLES = 100  # test texts timed one at a time for latency percentiles
 COLUMNS = [
     "family", "macro_f1", "accuracy", "train_seconds", "predict_seconds",
     "latency_ms_mean", "latency_ms_p90", "latency_ms_p95", "latency_ms_p99", "config_hash",
@@ -155,13 +162,14 @@ def run(train: Split, test: Split, embedder: TextEmbedder, latency_samples: int)
     rng = np.random.default_rng(0)
     sample = [test.texts[i] for i in rng.choice(len(test.texts), min(latency_samples, len(test.texts)), replace=False)]
 
-    _, embed_seconds = timed(embedder.embed, test.texts)
+    test_vecs, embed_seconds = timed(embedder.embed, test.texts)
     rows = [{
         "classifier": "embedding", "family": "embedder", "predict_seconds": embed_seconds,
         **latency_ms(lambda t: embedder.embed([t]), sample), "config_hash": embedder.model_hash,
     }]
     embedder = CachedEmbedder(embedder)
-    embedder.embed(train.texts + test.texts)
+    embedder.add(test.texts, test_vecs)  # reuse the timed pass rather than embedding test again
+    embedder.embed(train.texts)
 
     majority = Counter(train.labels).most_common(1)[0][0]
     baseline = [majority] * len(test.labels)
@@ -195,31 +203,36 @@ def run(train: Split, test: Split, embedder: TextEmbedder, latency_samples: int)
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--dataset", choices=DATASETS, default="sms_spam")
-    parser.add_argument("--embedder", choices=EMBEDDERS, default="minilm")
     args = parser.parse_args()
 
     train, test = load_split(args.dataset, "train"), load_split(args.dataset, "test")
     print(f"{args.dataset}: {len(train.texts):,} train / {len(test.texts):,} test, "
           f"train classes {dict(Counter(train.labels))}")
-    embedder = EMBEDDERS[args.embedder]()
-    results = run(train, test, embedder, LATENCY_SAMPLES)
-    print(results.drop(columns="config_hash").round(4).to_string())
-
-    stem = f"{args.dataset}_{args.embedder}"
     out = ROOT / "results"
     out.mkdir(exist_ok=True)
-    results.to_csv(out / f"{stem}.csv", lineterminator="\n")
-    metadata = {
-        "dataset": args.dataset,
-        "dataset_title": DATASETS[args.dataset],
-        "embedder": args.embedder,
-        "embedder_config": embedder.config(),
-        "n_train": len(train.texts),
-        "n_test": len(test.texts),
-        "latency_samples": min(LATENCY_SAMPLES, len(test.texts)),
-    }
-    (out / f"{stem}.json").write_text(json.dumps(metadata, indent=2) + "\n")
-    print(f"wrote results/{stem}.csv and results/{stem}.json")
+
+    for embedder_name, make_embedder in EMBEDDERS.items():
+        print(f"\n=== {embedder_name} ===")
+        embedder = make_embedder()
+        results = run(train, test, embedder, LATENCY_SAMPLES)
+        print(results.drop(columns="config_hash").round(4).to_string())
+
+        stem = f"{args.dataset}_{embedder_name}"
+        results.to_csv(out / f"{stem}.csv", lineterminator="\n")
+        metadata = {
+            "dataset": args.dataset,
+            "dataset_title": DATASETS[args.dataset],
+            "embedder": embedder_name,
+            "embedder_config": embedder.config(),
+            "n_train": len(train.texts),
+            "n_test": len(test.texts),
+            "latency_samples": min(LATENCY_SAMPLES, len(test.texts)),
+        }
+        (out / f"{stem}.json").write_text(json.dumps(metadata, indent=2) + "\n")
+        print(f"wrote results/{stem}.csv and results/{stem}.json")
+
+        del embedder, results
+        gc.collect()  # free the previous model before loading the next
 
 
 if __name__ == "__main__":

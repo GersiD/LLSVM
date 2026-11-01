@@ -1,0 +1,14 @@
+{
+  "dataset": "sms_spam",
+  "dataset_title": "SMS Spam Collection",
+  "embedder": "gemma2",
+  "embedder_config": {
+    "model_id": "google/embeddinggemma-2",
+    "revision": "f9972ac22e696a105c482202646979e33e4b5a1e",
+    "normalize": true,
+    "max_seq_length": 1000000000000000019884624838656
+  },
+  "n_train": 4136,
+  "n_test": 1035,
+  "latency_samples": 100
+}
