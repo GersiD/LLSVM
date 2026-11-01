@@ -29,7 +29,8 @@ class HuggingFaceTextEmbedder(TextEmbedder):
             padding-level float noise, so it isn't part of `config()`.
         device: "cpu", "cuda", "mps", or None to auto-select. Not part of
             `config()` for the same reason.
-        progress: Show a progress bar while embedding. Not part of `config()`.
+        progress: Show a progress bar when embedding more than one batch. Not
+            part of `config()`.
     """
 
     def __init__(
@@ -71,5 +72,5 @@ class HuggingFaceTextEmbedder(TextEmbedder):
             batch_size=self._batch_size,
             normalize_embeddings=self._normalize,
             convert_to_numpy=True,
-            show_progress_bar=self._progress,
+            show_progress_bar=self._progress and len(texts) > self._batch_size,
         )

@@ -9,7 +9,7 @@ Embed text once with a small language model, then classify it with an SVM: about
 | Best classifier | linear SVM, 0.97 macro-F1 | RBF SVM, 0.67 macro-F1 (+1.7 ms) |
 | Always guess the most common label | 87.3% accuracy | 35.0% accuracy |
 
-<sub>Apple M2 Pro laptop, one text at a time, mean over 1,000 test texts. Classifier times are on top of the embedding time.</sub>
+<sub>Apple M2 Pro laptop, one text at a time, mean over 100 test texts. Classifier times are on top of the embedding time.</sub>
 
 ![Classifier comparison on the SMS Spam Collection](results/plots/sms_spam_minilm.png)
 
@@ -27,10 +27,10 @@ Embed text once with a small language model, then classify it with an SVM: about
 
 ## Running it
 
-    uv run experiment.py                                   # SMS Spam, MiniLM
-    uv run experiment.py --dataset emotion --embedder minilm
+    uv run experiment.py                     # SMS Spam, every embedder
+    uv run experiment.py --dataset emotion
 
-Each run writes `results/<dataset>_<embedder>.csv` and `results/<dataset>_<embedder>.json`. Then `uv run results/plot.py` makes `results/plots/<dataset>_<embedder>.png`.
+Each run goes through every embedder in `EMBEDDERS` and writes `results/<dataset>_<embedder>.csv` and `results/<dataset>_<embedder>.json` for each. Then `uv run results/plot.py` makes `results/plots/<dataset>_<embedder>.png`.
 
 ### macOS
 

@@ -1,0 +1,14 @@
+{
+  "dataset": "emotion",
+  "dataset_title": "Emotion dataset",
+  "embedder": "gemma2",
+  "embedder_config": {
+    "model_id": "google/embeddinggemma-2",
+    "revision": "f9972ac22e696a105c482202646979e33e4b5a1e",
+    "normalize": true,
+    "max_seq_length": 1000000000000000019884624838656
+  },
+  "n_train": 16000,
+  "n_test": 4000,
+  "latency_samples": 100
+}
