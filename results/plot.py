@@ -23,7 +23,8 @@ PLOTS = RESULTS / "plots"
 
 INK, INK_2, MUTED, GRID, SURFACE = "#0b0b0b", "#52514e", "#898781", "#e1e0d9", "#fcfcfb"
 # Categorical slots 1-4, in fixed order (validated colorblind-safe for adjacent pairs).
-FAMILY_COLORS = {"k-means": "#2a78d6", "logistic regression": "#1baf7a", "SVM": "#eb6834", "gradient boosting": "#eda100"}
+FAMILY_COLORS = {"k-means": "#2a78d6", "logistic regression": "#1baf7a", "discriminant analysis": "#8b5cd6",
+                 "SVM": "#eb6834", "gradient boosting": "#eda100"}
 
 
 def plot(results: pd.DataFrame, title: str, subtitle: str, path: Path) -> None:

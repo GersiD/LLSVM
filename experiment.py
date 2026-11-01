@@ -35,6 +35,7 @@ from tqdm import tqdm
 from llsvm.huggingface_text_embedder import HuggingFaceTextEmbedder
 from llsvm.kmeans import KMeansClassifier
 from llsvm.logistic_regression import LogisticRegressionClassifier
+from llsvm.qda import QDAClassifier
 from llsvm.svm import KernelSVM, LinearSVM
 from llsvm.text_classifier import TextClassifier
 from llsvm.text_embedder import TextEmbedder
@@ -78,6 +79,7 @@ def make_classifiers(embedder: TextEmbedder) -> dict[str, TextClassifier]:
         "k-means (k=1)": KMeansClassifier(embedder, k=1),
         "k-means (k=5)": KMeansClassifier(embedder, k=5),
         "logistic regression": LogisticRegressionClassifier(embedder),
+        "QDA": QDAClassifier(embedder),
         "linear SVM": LinearSVM(embedder),
         "RBF SVM": KernelSVM(embedder, kernel="rbf"),
         "XGBoost": XGBoostClassifier(embedder),
@@ -87,6 +89,7 @@ def make_classifiers(embedder: TextEmbedder) -> dict[str, TextClassifier]:
 FAMILIES = {
     KMeansClassifier: "k-means",
     LogisticRegressionClassifier: "logistic regression",
+    QDAClassifier: "discriminant analysis",
     LinearSVM: "SVM",
     KernelSVM: "SVM",
     XGBoostClassifier: "gradient boosting",
