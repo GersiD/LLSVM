@@ -24,18 +24,18 @@ Every model's accuracy, side by side, is in the [full accuracy chart](results/pl
 
 <sub>How these were measured: see [Notes](#notes) at the bottom.</sub>
 
-Through the API at list prices, the same zero-shot Claude Sonnet 5.5 call would cost at least about $200 per 1M texts (about $10 with Claude Haiku 5.5). The local pipeline has no per-call cost.
+Through the API at list prices, the same zero-shot Claude Sonnet 5.5 call would cost at about $200 per 1M texts (about $10 with Claude Haiku 5.5). The local pipeline has no per-call cost.
 
 ## Why this repo exists
 
-**The idea.** Large language models (LLMs) have completely changed the world of software development, and my personal
-field of machine learning. They are the most powerful tool yet, but that does not mean that they rule the roost for
+**The idea.** Large language models (LLMs) have completely changed the world, and my personal
+field of machine learning. They are the most powerful tool yet, but that does not mean that they are the only tool for
 every task. LLMs are slow, expensive, and often overkill for simple classification tasks, yet many teams in production
 write wrappers around their core business logic to call an LLM. What if you could get more out of less? Is there more to
 ML than just calling LLMs? These are the questions that led me to create this repo.
 
-**What we found.** On SMS Spam, the MiniLM linear SVM ties Claude at 98.8% accuracy at about 360x less latency, and
-EmbeddingGemma 2 with an RBF SVM edges past it at 99.5%. Emotion is the harder test, and there the classical pipeline
+**What we found.** On SMS Spam, the MiniLM linear SVM ties Claude at 98.8% accuracy at 360x less latency, and
+EmbeddingGemma 2 with an RBF SVM edges past it at 99.5%. Emotion is the harder task, and there the classical pipeline
 wins more readily: 74.6% for MiniLM against 60.3% for Claude, whose macro-F1 is 0.55. Even plain logistic regression on MiniLM embeddings (69.0%) beats it. The classifier adds at most 2.5 ms (the RBF SVM on Emotion), while taking about 30s to train on 16,000 texts.
 
 **Limitations.** The LLM baseline is one model with a short zero-shot prompt and low effort. Few-shot examples or more effort might close the Emotion gap. Claude's latency includes the network round trip and Claude Code's overhead. We never tested on an edge device like a phone.
